@@ -6,13 +6,12 @@ window.app = {
 		downTime: undefined
 	},
 	grid: {
-		center: {
+		origin: {
 			x: 0.00,
 			y: 0.00
 		}
 	},
-	map: {},
-	rooms: [],
+	rects: [],
 	newRect: undefined,
 	canvas: document.querySelector('canvas')
 };
@@ -37,6 +36,20 @@ function handleMouseDown(e){
 
 function handleMouseUp(e){
 	app.mouse.isDown = false;
+
+	if( app.mode == '+' ){
+		//we are adding a rect, commit it
+		app.rects.push(new DrawRect(
+			app.newRect.x,
+			app.newRect.y,
+			app.newRect.xBound,
+			app.newRect.yBound)
+		);
+
+		//remove the new rect, reset the mode
+		delete app.newRect;
+		app.mode = undefined;
+	}
 };
 
 function leftMouseDownMove(e){
@@ -47,8 +60,8 @@ function leftMouseDownMove(e){
 			x: e.clientX,
 			y: e.clientY
 		}, {
-			x:app.grid.center.x,
-			y:app.grid.center.y
+			x:app.grid.origin.x,
+			y:app.grid.origin.y
 		});
 
 		curPoint.snapToGrid();
@@ -61,11 +74,11 @@ function leftMouseDownMove(e){
 			//create a new rect and throw the app into add mode
 			app.mode = '+';
 			var curPoint = convertToGridPoint({
-				x: e.clientX,
-				y: e.clientY
+				x: app.mouse.downLocation.x,
+				y: app.mouse.downLocation.y
 			}, {
-				x: app.grid.center.x,
-				y: app.grid.center.y
+				x: app.grid.origin.x,
+				y: app.grid.origin.y
 			});
 			curPoint.snapToGrid();
 			app.newRect = new GridRect(curPoint.x, curPoint.y);
@@ -75,11 +88,11 @@ function leftMouseDownMove(e){
 
 //center is top left of source node
 //bound is top left of terminal node
-function GridRect(x,y){
+function GridRect(x,y,xBound,yBound){
 	this.x = x;
 	this.y = y;
-	this.xBound = x;
-	this.yBound = y;
+	this.xBound = xBound === undefined ? xBound : x;
+	this.yBound = yBound === undefined ? yBound : y;
 };
 
 GridRect.prototype.updateBounds = function(x,y){
@@ -87,24 +100,51 @@ GridRect.prototype.updateBounds = function(x,y){
 	this.yBound = y;
 };
 
+function DrawRect(x,y,xBound,yBound){
+	this.x = x;
+	this.y = y;
+	this.xBound = xBound;
+	this.yBound = yBound;
+
+	//determine the drawing bounds
+	var left, right,
+		top, bottom;
+
+	if( xBound > x ){
+		xBound += 1;
+		left = x;
+		right = xBound;
+	}
+	else{
+		x += 1;
+		left = xBound;
+		right = x;
+	}
+
+	if( yBound > y ){
+		yBound += 1;
+		top = y;
+		bottom = yBound;
+	}
+	else{
+		y += 1;
+		top = yBound;
+		bottom = y;
+	}
+
+	this.drawBounds = {
+		x1: left,
+		x2: right,
+		y1: top,
+		y2: bottom
+	};
+}
+
 function GridPoint(x,y){
 	this.x = x;
 	this.y = y;
 };
 GridPoint.prototype.snapToGrid = function(){
-	/*if( this.x%1 < 0.5 ){
-		this.x = this.x - this.x%1;
-	}
-	else{
-		this.x = parseInt(this.x/1)+1;
-	}
-
-	if( this.y%1 < 0.5 ){
-		this.y = this.y - this.y%1;
-	}
-	else{
-		this.y = parseInt(this.y/1)+1;
-	}*/
 	this.x = this.x - this.x%1;
 	this.y = this.y - this.y%1;
 };
@@ -154,9 +194,13 @@ function drawLoop(){
 	var canvas = app.canvas;
 	prepCanvas(canvas);
 	var ctx = canvas.getContext('2d');
+	ctx.clearRect(0,0,canvas.width,canvas.height);
 	drawCoords(ctx);
-	//drawRooms()
-	if( app.newRect ){
+	
+	//draw existing rects
+	drawRects(ctx);
+
+	if( app.mode == '+' && app.newRect ){
 		highlightNewRect(ctx);
 	}
 	else{
@@ -198,6 +242,31 @@ function drawCoords(ctx){
 		}
 	}
 	
+};
+
+function drawRects(ctx){
+	for( var i=0; i<app.rects.length; i++ ){
+		var rectPoint1 = convertToScreenPoint(
+				new GridPoint(app.rects[i].drawBounds.x1, app.rects[i].drawBounds.y1),
+				new GridPoint(app.grid.origin.x, app.grid.origin.y)
+			),
+			rectPoint2 = convertToScreenPoint(
+				new GridPoint(app.rects[i].drawBounds.x2, app.rects[i].drawBounds.y2),
+				new GridPoint(app.grid.origin.x, app.grid.origin.y)
+			);
+
+		ctx.fillStyle = 'rgba(200, 200, 200, 1.0)';
+		ctx.beginPath();
+		ctx.rect(
+			rectPoint1.x,
+			rectPoint1.y,
+			rectPoint2.x-rectPoint1.x,
+			rectPoint2.y-rectPoint1.y);
+		ctx.fill();
+		ctx.strokeStyle = '#777';
+		ctx.stroke();
+		ctx.closePath();
+	}
 };
 
 function highlightNode(ctx){
@@ -259,11 +328,11 @@ function highlightNewRect(ctx){
 
 	var source = convertToScreenPoint(
 			new GridPoint(app.newRect.x, app.newRect.y),
-			new GridPoint(app.grid.center.x, app.grid.center.y)
+			new GridPoint(app.grid.origin.x, app.grid.origin.y)
 		),
 		bound = convertToScreenPoint(
 			new GridPoint(app.newRect.xBound, app.newRect.yBound),
-			new GridPoint(app.grid.center.x, app.grid.center.y)
+			new GridPoint(app.grid.origin.x, app.grid.origin.y)
 		);
 
 	var left, right,
@@ -291,6 +360,13 @@ function highlightNewRect(ctx){
 		top = bound;
 		bottom = source;
 	}
+
+	//fill the rect
+	ctx.fillStyle = 'rgba(64, 160, 137, 0.2)';
+	ctx.beginPath();
+	ctx.rect(left.x, top.y, right.x-left.x,bottom.y-top.y);
+	ctx.fill();
+	ctx.closePath();
 
 	//draw from the top left to the bottom right
 	ctx.strokeStyle = '#40A089';
