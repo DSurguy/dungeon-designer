@@ -12,13 +12,16 @@ window.app = {
 		}
 	},
 	rects: [],
+	pencils: {},
 	newRect: undefined,
+	paintMode: 'rect',
+	drawMode: undefined,
 	canvas: document.querySelector('canvas')
 };
 
 function handleMouseMove(e){
-	app.mouse.x = e.clientX;
-	app.mouse.y = e.clientY;
+	app.mouse.x = e.offsetX;
+	app.mouse.y = e.offsetY;
 
 	if( app.mouse.isDown ){
 		leftMouseDownMove(e);
@@ -29,50 +32,14 @@ function handleMouseDown(e){
 	app.mouse.isDown = true;
 	app.mouse.downTime = Date.now();
 	app.mouse.downLocation = {
-		x: e.clientX,
-		y: e.clientY
+		x: e.offsetX,
+		y: e.offsetY
 	};
-};
 
-function handleMouseUp(e){
-	app.mouse.isDown = false;
-
-	if( app.mode == '+' ){
-		//we are adding a rect, commit it
-		app.rects.push(new DrawRect(
-			app.newRect.x,
-			app.newRect.y,
-			app.newRect.xBound,
-			app.newRect.yBound)
-		);
-
-		//remove the new rect, reset the mode
-		delete app.newRect;
-		app.mode = undefined;
-	}
-};
-
-function leftMouseDownMove(e){
-	//determine if we are already drawing a new rect
-	if( app.mode == '+' ){
-		//we just need to update the bounds of the new rect
-		var curPoint = convertToGridPoint({
-			x: e.clientX,
-			y: e.clientY
-		}, {
-			x:app.grid.origin.x,
-			y:app.grid.origin.y
-		});
-
-		curPoint.snapToGrid();
-		app.newRect.updateBounds(curPoint.x, curPoint.y);
-	}
-	else if( app.mode == undefined ){
-		//check if we have moved enough to create a new rect
-		if( Math.abs(e.clientX - app.mouse.downLocation.x) + Math.abs(e.clientX - app.mouse.downLocation.x) > 5
-		|| Date.now() - app.mouse.downTime > 500 ){
+	if( app.drawMode == undefined ){
+		if( app.paintMode == 'rect' ){
 			//create a new rect and throw the app into add mode
-			app.mode = '+';
+			app.drawMode = '+';
 			var curPoint = convertToGridPoint({
 				x: app.mouse.downLocation.x,
 				y: app.mouse.downLocation.y
@@ -83,6 +50,98 @@ function leftMouseDownMove(e){
 			curPoint.snapToGrid();
 			app.newRect = new GridRect(curPoint.x, curPoint.y);
 		}
+		else if( app.paintMode == 'pencil') {
+			app.drawMode = '+';
+			//add a new small rect
+			var curPoint = convertToGridPoint({
+				x: e.offsetX,
+				y: e.offsetY
+			}, {
+				x: app.grid.origin.x,
+				y: app.grid.origin.y
+			});
+			curPoint.snapToGrid();
+
+			if( app.pencils[curPoint.x] === undefined ){
+				app.pencils[curPoint.x] = {};
+			}
+
+			if( !app.pencils[curPoint.x][curPoint.y] ){
+				app.pencils[curPoint.x][curPoint.y] = true;
+				app.rects.push(new DrawRect(
+					curPoint.x,
+					curPoint.y,
+					curPoint.x,
+					curPoint.y)
+				);
+			}
+		}
+	}
+};
+
+function handleMouseUp(e){
+	app.mouse.isDown = false;
+
+	if( app.drawMode == '+' ){
+		if( app.paintMode == 'rect' ){
+			//we are adding a rect, commit it
+			app.rects.push(new DrawRect(
+				app.newRect.x,
+				app.newRect.y,
+				app.newRect.xBound,
+				app.newRect.yBound)
+			);
+
+			//remove the new rect, reset the mode
+			delete app.newRect;
+			app.drawMode = undefined;
+		}
+		else if( app.paintMode == 'pencil' ){
+			app.drawMode = undefined;
+		}
+	}
+};
+
+function leftMouseDownMove(e){
+	//determine if we are already drawing a new rect
+	if( app.drawMode == '+' ){
+		if( app.paintMode == 'rect' ){
+			//we just need to update the bounds of the new rect
+			var curPoint = convertToGridPoint({
+				x: e.offsetX,
+				y: e.offsetY
+			}, {
+				x:app.grid.origin.x,
+				y:app.grid.origin.y
+			});
+
+			curPoint.snapToGrid();
+			app.newRect.updateBounds(curPoint.x, curPoint.y);
+		}
+		else if( app.paintMode == 'pencil' ){
+			//add a new small rect
+			var curPoint = convertToGridPoint({
+				x: e.offsetX,
+				y: e.offsetY
+			}, {
+				x: app.grid.origin.x,
+				y: app.grid.origin.y
+			});
+			curPoint.snapToGrid();
+
+			if( app.pencils[curPoint.x] === undefined ){
+				app.pencils[curPoint.x] = {};
+			}
+
+			if( !app.pencils[curPoint.x][curPoint.y] ){
+				app.rects.push(new DrawRect(
+					curPoint.x,
+					curPoint.y,
+					curPoint.x,
+					curPoint.y)
+				);
+			}
+		}
 	}
 };
 
@@ -91,8 +150,8 @@ function leftMouseDownMove(e){
 function GridRect(x,y,xBound,yBound){
 	this.x = x;
 	this.y = y;
-	this.xBound = xBound === undefined ? xBound : x;
-	this.yBound = yBound === undefined ? yBound : y;
+	this.xBound = (xBound !== undefined ? xBound : x);
+	this.yBound = (yBound !== undefined ? yBound : y);
 };
 
 GridRect.prototype.updateBounds = function(x,y){
@@ -185,6 +244,17 @@ document.body.onload = function(){
 	app.canvas.addEventListener('mouseenter', handleMouseMove, false);
 	app.canvas.addEventListener('mousedown', handleMouseDown, false);
 	app.canvas.addEventListener('mouseup', handleMouseUp, false);
+
+	document.querySelector('.toolbar .rectMode').addEventListener('click', function(e){
+		app.paintMode = 'rect';
+		this.classList.add('-active');
+		this.parentElement.querySelector('.pencilMode').classList.remove('-active');
+	});
+	document.querySelector('.toolbar .pencilMode').addEventListener('click', function(e){
+		app.paintMode = 'pencil';
+		this.classList.add('-active');
+		this.parentElement.querySelector('.rectMode').classList.remove('-active');
+	});
 	drawLoop();
 }
 
@@ -192,7 +262,7 @@ function drawLoop(){
 	requestAnimationFrame(drawLoop);
 
 	var canvas = app.canvas;
-	prepCanvas(canvas);
+	prepCanvas(canvas, 48, 120);
 	var ctx = canvas.getContext('2d');
 	ctx.clearRect(0,0,canvas.width,canvas.height);
 	drawCoords(ctx);
@@ -200,7 +270,7 @@ function drawLoop(){
 	//draw existing rects
 	drawRects(ctx);
 
-	if( app.mode == '+' && app.newRect ){
+	if( app.drawMode == '+' && app.newRect ){
 		highlightNewRect(ctx);
 	}
 	else{
@@ -210,9 +280,11 @@ function drawLoop(){
 };
 
 
-function prepCanvas(canvas){
-	canvas.width = document.body.clientWidth;
-	canvas.height = document.body.clientHeight;
+function prepCanvas(canvas, top, left){
+	top = top ? top : 0;
+	left = left ? left : 0;
+	canvas.width = document.body.clientWidth-left;
+	canvas.height = document.body.clientHeight-top;
 };
 
 function drawCoords(ctx){
