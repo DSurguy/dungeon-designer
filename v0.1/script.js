@@ -24,14 +24,14 @@ window.app = {
 
 
 /**
-* Event Handlers and App Logic
+* Event Handlers
 */
 function handleMouseMove(e){
 	app.mouse.x = e.offsetX;
 	app.mouse.y = e.offsetY;
 
 	if( app.mouse.isDown ){
-		leftMouseDownMove(e);
+		handleMouseDownMove(e);
 	}
 };
 
@@ -46,43 +46,22 @@ function handleMouseDown(e){
 	console.log(e);
 
 	if( app.drawMode == undefined ){
-		var curPoint = (new ScreenPoint(e.offsetX, e.offsetY)).convertToGridPoint(app.grid.origin.x, app.grid.origin.y);
 
-		curPoint.snapToGrid();
-		if( app.paintMode == 'rect' ){
-			//create a new rect and throw the app into add mode
+		//determine draw mode
+		if( e.ctrlKey ){
+			app.drawMode = '-';
+		}
+		else{
 			app.drawMode = '+';
+		}
+
+		if( app.paintMode == 'rect' ){
+			var curPoint = (new ScreenPoint(e.offsetX, e.offsetY)).convertToGridPoint(app.grid.origin.x, app.grid.origin.y);
+			curPoint.snapToGrid();
 			app.newRect = new GridRect(curPoint.x, curPoint.y);
 		}
 		else if( app.paintMode == 'pencil') {
-			app.drawMode = '+';
-
-			if( app.nodes[curPoint.x] === undefined ){
-				app.nodes[curPoint.x] = {};
-			}
-
-			if( !app.nodes[curPoint.x][curPoint.y] ){
-				//create a new node
-				var newNode = new FillNode(curPoint.x,curPoint.y);
-
-				//check to see if it's connected to other nodes and update their borders for drawing
-				newNode.updateConnections(app.nodes);
-				if( !newNode.topBorder ){
-					app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: false});
-				}
-				if( !newNode.bottomBorder ){
-					app.nodes[newNode.x][newNode.y+1].updateBorders({top: false});
-				}
-				if( !newNode.leftBorder ){
-					app.nodes[newNode.x-1][newNode.y].updateBorders({right: false});
-				}
-				if( !newNode.rightBorder ){
-					app.nodes[newNode.x+1][newNode.y].updateBorders({left: false});
-				}
-
-				//add the node to the grid
-				app.nodes[curPoint.x][curPoint.y] = newNode;
-			}
+			modifyPencilPoint(e, app.drawMode);
 		}
 	}
 };
@@ -92,68 +71,7 @@ function handleMouseUp(e){
 
 	if( app.drawMode == '+' ){
 		if( app.paintMode == 'rect' ){
-			//determine the bounds so we can add nodes from top left to bottom right
-			var xMin, xMax, yMin, yMax;
-			if( app.newRect.x > app.newRect.xBound ){
-				xMin = app.newRect.xBound;
-				xMax = app.newRect.x;
-			}
-			else{
-				xMin = app.newRect.x;
-				xMax = app.newRect.xBound;
-			}
-			if( app.newRect.y > app.newRect.yBound ){
-				yMin = app.newRect.yBound;
-				yMax = app.newRect.y;
-			}
-			else{
-				yMin = app.newRect.y;
-				yMax = app.newRect.yBound;
-			}
-			//loop through all nodes, y-first
-			for( var x=xMin; x<=xMax; x++ ){
-				for( var y=yMin; y<=yMax; y++ ){
-
-					if( app.nodes[x] === undefined ){
-						app.nodes[x] = {};
-					}
-
-					var newNode = new FillNode(x,y);
-
-					//check the borders if we're on an edge node
-					if( newNode.x == xMin || newNode.x == xMax || newNode.y == yMin || newNode.y == yMax ){
-						newNode.updateConnections(app.nodes);
-						if( !newNode.topBorder ){
-							app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: false});
-						}
-						if( !newNode.bottomBorder ){
-							app.nodes[newNode.x][newNode.y+1].updateBorders({top: false});
-						}
-						if( !newNode.leftBorder ){
-							app.nodes[newNode.x-1][newNode.y].updateBorders({right: false});
-						}
-						if( !newNode.rightBorder ){
-							app.nodes[newNode.x+1][newNode.y].updateBorders({left: false});
-						}
-					}
-					else{
-						newNode.updateBorders({
-							top: false,
-							bottom: false,
-							left: false,
-							right: false
-						});
-						//modify the nodes above and left
-						app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: false});
-						app.nodes[newNode.x-1][newNode.y].updateBorders({right: false});
-					}
-
-					//add this node to the grid
-					app.nodes[newNode.x][newNode.y] = newNode;
-				}
-			}
-
-			delete app.newRect;
+			endRectDrawing(e, '+');
 			app.drawMode = undefined;
 		}
 		else if( app.paintMode == 'pencil' ){
@@ -161,44 +79,184 @@ function handleMouseUp(e){
 			app.drawMode = undefined;
 		}
 	}
+	else if( app.drawMode == '-' ){
+		if( app.paintMode == 'rect' ){
+			endRectDrawing(e, '-')
+		}
+		else if( app.paintMode == 'pencil' ){
+			app.drawMode = undefined;
+		}
+	}
 };
 
-function leftMouseDownMove(e){
+function handleMouseDownMove(e){
 	//determine if we are already drawing a new rect
-	if( app.drawMode == '+' ){
-		//create a new node
-		var curPoint = (new ScreenPoint(e.offsetX, e.offsetY)).convertToGridPoint(app.grid.origin.x, app.grid.origin.y);
-
-		curPoint.snapToGrid();
+	if( app.drawMode ){
 		if( app.paintMode == 'rect' ){
+			//create a new node
+			var curPoint = (new ScreenPoint(e.offsetX, e.offsetY)).convertToGridPoint(app.grid.origin.x, app.grid.origin.y);
+			curPoint.snapToGrid();
+			//update the bounds of the current rect
 			app.newRect.updateBounds(curPoint.x, curPoint.y);
 		}
 		else if( app.paintMode == 'pencil' ){
-			if( app.nodes[curPoint.x] === undefined ){
-				app.nodes[curPoint.x] = {};
+			modifyPencilPoint(e, app.drawMode);
+		}
+	}
+};
+
+
+
+/**
+* App Logic
+*/
+function endRectDrawing(e, mode){
+	//determine the bounds so we can modify nodes from top left to bottom right
+	var xMin, xMax, yMin, yMax;
+	if( app.newRect.x > app.newRect.xBound ){
+		xMin = app.newRect.xBound;
+		xMax = app.newRect.x;
+	}
+	else{
+		xMin = app.newRect.x;
+		xMax = app.newRect.xBound;
+	}
+	if( app.newRect.y > app.newRect.yBound ){
+		yMin = app.newRect.yBound;
+		yMax = app.newRect.y;
+	}
+	else{
+		yMin = app.newRect.y;
+		yMax = app.newRect.yBound;
+	}
+	//loop through all nodes, y-first
+	for( var x=xMin; x<=xMax; x++ ){
+		for( var y=yMin; y<=yMax; y++ ){
+			if( app.nodes[x] === undefined ){
+				app.nodes[x] = {};
 			}
 
-			if( !app.nodes[curPoint.x][curPoint.y] ){
-				var newNode = new FillNode(curPoint.x, curPoint.y);
+			if( mode == '+' ){
+				//add the node
+				var newNode = new FillNode(x,y);
 
-				//check to see if it's connected to other nodes and update their borders for drawing
-				newNode.updateConnections(app.nodes);
-				if( !newNode.topBorder ){
+				//check the borders if we're on an edge node
+				if( newNode.x == xMin || newNode.x == xMax || newNode.y == yMin || newNode.y == yMax ){
+					newNode.updateConnections(app.nodes);
+					if( !newNode.topBorder ){
+						app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: false});
+					}
+					if( !newNode.bottomBorder ){
+						app.nodes[newNode.x][newNode.y+1].updateBorders({top: false});
+					}
+					if( !newNode.leftBorder ){
+						app.nodes[newNode.x-1][newNode.y].updateBorders({right: false});
+					}
+					if( !newNode.rightBorder ){
+						app.nodes[newNode.x+1][newNode.y].updateBorders({left: false});
+					}
+				}
+				else{
+					newNode.updateBorders({
+						top: false,
+						bottom: false,
+						left: false,
+						right: false
+					});
+					//modify the nodes above and left
 					app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: false});
-				}
-				if( !newNode.bottomBorder ){
-					app.nodes[newNode.x][newNode.y+1].updateBorders({top: false});
-				}
-				if( !newNode.leftBorder ){
 					app.nodes[newNode.x-1][newNode.y].updateBorders({right: false});
 				}
-				if( !newNode.rightBorder ){
-					app.nodes[newNode.x+1][newNode.y].updateBorders({left: false});
-				}
 
-				//add the node to the grid
-				app.nodes[curPoint.x][curPoint.y] = newNode;
+				//add this node to the grid
+				app.nodes[newNode.x][newNode.y] = newNode;
 			}
+			else if( mode == '-' ){
+				//remove the node
+				var newNode = new FillNode(x,y);
+				//modify neighbors if we're on an edge node
+				if( newNode.x == xMin || newNode.x == xMax || newNode.y == yMin || newNode.y == yMax ){
+					newNode.updateConnections(app.nodes);
+					if( !newNode.topBorder ){
+						app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: true});
+					}
+					if( !newNode.bottomBorder ){
+						app.nodes[newNode.x][newNode.y+1].updateBorders({top: true});
+					}
+					if( !newNode.leftBorder ){
+						app.nodes[newNode.x-1][newNode.y].updateBorders({right: true});
+					}
+					if( !newNode.rightBorder ){
+						app.nodes[newNode.x+1][newNode.y].updateBorders({left: true});
+					}
+					//now delete the node
+					delete app.nodes[newNode.x][newNode.y];
+				}
+				else{
+					//this is an inside node, just delete it.
+					delete app.nodes[newNode.x][newNode.y];
+				}
+			}
+		}
+	}
+
+	delete app.newRect;
+};
+
+function modifyPencilPoint(e, mode){
+	var curPoint = (new ScreenPoint(e.offsetX, e.offsetY)).convertToGridPoint(app.grid.origin.x, app.grid.origin.y);
+	curPoint.snapToGrid();
+	if( app.nodes[curPoint.x] === undefined ){
+		app.nodes[curPoint.x] = {};
+	}
+
+	if( mode == '+' ){
+		if( !app.nodes[curPoint.x][curPoint.y] ){
+			//create a new node
+			var newNode = new FillNode(curPoint.x, curPoint.y);
+
+			//check to see if it's connected to other nodes and update their borders for drawing
+			newNode.updateConnections(app.nodes);
+			if( !newNode.topBorder ){
+				app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: false});
+			}
+			if( !newNode.bottomBorder ){
+				app.nodes[newNode.x][newNode.y+1].updateBorders({top: false});
+			}
+			if( !newNode.leftBorder ){
+				app.nodes[newNode.x-1][newNode.y].updateBorders({right: false});
+			}
+			if( !newNode.rightBorder ){
+				app.nodes[newNode.x+1][newNode.y].updateBorders({left: false});
+			}
+
+			//add the node to the grid
+			app.nodes[curPoint.x][curPoint.y] = newNode;
+		}
+	}
+	else if( mode == '-' ){
+		if( app.nodes[curPoint.x][curPoint.y] ){
+			//create a new node
+			var curPoint = (new ScreenPoint(e.offsetX, e.offsetY)).convertToGridPoint(app.grid.origin.x, app.grid.origin.y);
+			curPoint.snapToGrid();
+			var newNode = new FillNode(curPoint.x, curPoint.y);
+
+			//check to see if it's connected to other nodes and update their borders for drawing
+			newNode.updateConnections(app.nodes);
+			if( !newNode.topBorder ){
+				app.nodes[newNode.x][newNode.y-1].updateBorders({bottom: true});
+			}
+			if( !newNode.bottomBorder ){
+				app.nodes[newNode.x][newNode.y+1].updateBorders({top: true});
+			}
+			if( !newNode.leftBorder ){
+				app.nodes[newNode.x-1][newNode.y].updateBorders({right: true});
+			}
+			if( !newNode.rightBorder ){
+				app.nodes[newNode.x+1][newNode.y].updateBorders({left: true});
+			}
+
+			delete app.nodes[curPoint.x][curPoint.y];
 		}
 	}
 };
@@ -369,12 +427,12 @@ function drawLoop(){
 	
 	drawNodes(ctx);
 
-	if( app.drawMode == '+' ){
+	if( app.drawMode ){
 		if( app.newRect ){
-			highlightNewRect(ctx);
+			highlightNewRect(ctx, app.drawMode);
 		}
 		else if( app.paintMode == 'pencil' ) {
-			highlightMouseNode(ctx, 'new');
+			highlightMouseNode(ctx, app.drawMode);
 		}
 	}
 	else{
@@ -500,7 +558,7 @@ function drawNodes(ctx){
 	}
 };
 
-function highlightMouseNode(ctx, type){
+function highlightMouseNode(ctx, mode){
 	var offset = {
 		x: (app.grid.origin.x*50)%50,
 		y: (app.grid.origin.y*50)%50
@@ -512,11 +570,14 @@ function highlightMouseNode(ctx, type){
 		y: app.mouse.y - app.mouse.y%50 + offset.y
 	};
 
-	switch(type){
-		case 'new':
-			//ctx.fillStyle = '#40A089';
+	switch(mode){
+		case '+':
 			ctx.fillStyle = 'rgba(64, 160, 137, 0.2)';
 			ctx.strokeStyle = '#40A089';
+		break;
+		case '-':
+			ctx.fillStyle = 'rgba(204, 67, 67, 0.2)';
+			ctx.strokeStyle = '#cc4343';
 		break;
 		default:
 			ctx.fillStyle = 'rgba(66, 130, 206, 0.2)';
@@ -550,8 +611,7 @@ function highlightMouseNode(ctx, type){
 	ctx.closePath();
 };
 
-function highlightNewRect(ctx){
-	//#40A089
+function highlightNewRect(ctx, mode){
 	//convert rect points to screen points
 	var source = (new GridPoint(app.newRect.x, app.newRect.y)).convertToScreenPoint(app.grid.origin.x, app.grid.origin.y),
 		bound = (new GridPoint(app.newRect.xBound, app.newRect.yBound)).convertToScreenPoint(app.grid.origin.x, app.grid.origin.y);
@@ -582,15 +642,28 @@ function highlightNewRect(ctx){
 		bottom = source;
 	}
 
+	switch(mode){
+		case '+':
+			ctx.fillStyle = 'rgba(64, 160, 137, 0.2)';
+			ctx.strokeStyle = '#40A089';
+		break;
+		case '-':
+			ctx.fillStyle = 'rgba(204, 67, 67, 0.2)';
+			ctx.strokeStyle = '#cc4343';
+		break;
+		default:
+			ctx.fillStyle = 'rgba(66, 130, 206, 0.2)';
+			ctx.strokeStyle = '#4282ce';
+		break;
+	}
+
 	//fill the rect
-	ctx.fillStyle = 'rgba(64, 160, 137, 0.2)';
 	ctx.beginPath();
 	ctx.rect(left.x, top.y, right.x-left.x,bottom.y-top.y);
 	ctx.fill();
 	ctx.closePath();
 
 	//draw from the top left to the bottom right
-	ctx.strokeStyle = '#40A089';
 	ctx.beginPath();
 	ctx.rect(left.x, top.y, right.x-left.x,bottom.y-top.y);
 	ctx.stroke();
